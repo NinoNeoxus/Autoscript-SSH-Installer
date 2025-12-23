@@ -7,9 +7,11 @@
 #   ╚████╔╝ ██║     ██║ ╚████║    ██║     ██║  ██║███████╗██║ ╚═╝ ██║██║╚██████╔╝██║ ╚═╝ ██║
 #    ╚═══╝  ╚═╝     ╚═╝  ╚═══╝    ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚═╝ ╚═════╝ ╚═╝     ╚═╝
 # ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
 #  VPN Premium All-in-One Auto Script
 #  Supported: Ubuntu 20.04 / 22.04 LTS
-#  Version: 2.0.0
+#  Version: 2.1.0 (Enhanced)
+#  Created by: @schnuffelll
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Colors
@@ -47,7 +49,7 @@ print_banner() {
     ║     ╚═══╝  ╚═╝     ╚═╝  ╚═══╝    ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝  ║
     ║                                                                       ║
     ║               🚀 VPN PREMIUM ALL-IN-ONE INSTALLER 🚀                  ║
-    ║                    Version 2.0.0 | Ubuntu 20/22                       ║
+    ║                Version 2.1.0 | Created by @schnuffelll                ║
     ╚═══════════════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
@@ -126,6 +128,13 @@ get_user_input() {
     echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
     
+    # Auto Pointing Confirmation
+    read -p "$(echo -e ${CYAN}[?]${NC} Apakah ingin menggunakan Auto-Pointing Cloudflare? ${YELLOW}[y/n]${NC}: )" CF_CONFIRM
+    if [[ "$CF_CONFIRM" =~ ^[Yy]$ ]]; then
+        install_cloudflare "$DOMAIN" "$SERVER_IP"
+    fi
+
+    echo ""
     read -p "$(echo -e ${CYAN}[?]${NC} Lanjutkan instalasi? ${YELLOW}[y/n]${NC}: )" confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         exit 0
@@ -139,7 +148,40 @@ BOT_TOKEN=$BOT_TOKEN
 CHAT_ID=$CHAT_ID
 SERVER_IP=$SERVER_IP
 INSTALL_DATE=$(date +%Y-%m-%d)
+AUTHOR=@schnuffelll
 EOF
+}
+
+install_cloudflare() {
+    local domain=$1
+    local ip=$2
+    
+    echo ""
+    echo -e "${YELLOW}--- Cloudflare Auto Pointing ---${NC}"
+    read -p "Masukkan Email Cloudflare: " CF_EMAIL
+    read -p "Masukkan Global API Key: " CF_KEY
+    
+    # Get Zone ID
+    ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=${domain#*.}&status=active" \
+        -H "X-Auth-Email: $CF_EMAIL" \
+        -H "X-Auth-Key: $CF_KEY" \
+        -H "Content-Type: application/json" | jq -r .result[0].id)
+        
+    if [[ -z "$ZONE_ID" || "$ZONE_ID" == "null" ]]; then
+        log_error "Gagal mendapatkan Zone ID! Pastikan domain terdaftar di Cloudflare."
+        return 1
+    fi
+    
+    echo "Zone ID ditemukan: $ZONE_ID"
+    
+    # Create Record A
+    curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+        -H "X-Auth-Email: $CF_EMAIL" \
+        -H "X-Auth-Key: $CF_KEY" \
+        -H "Content-Type: application/json" \
+        --data '{"type":"A","name":"'${domain}'","content":"'${ip}'","ttl":0,"proxied":true}' > /dev/null 2>&1
+        
+    log_success "Domain $domain berhasil dipointing ke $ip"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -645,11 +687,12 @@ show_menu() {
     echo -e "${CYAN}╠═══════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC} Domain: ${GREEN}$DOMAIN${NC}"
     echo -e "${CYAN}║${NC} IP: ${GREEN}$SERVER_IP${NC}"
+    echo -e "${CYAN}║${NC} Author: ${GREEN}@schnuffelll${NC}"
     echo -e "${CYAN}╠═══════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${CYAN}║${NC}  ${GREEN}[1]${NC} SSH Menu          ${GREEN}[5]${NC} Service Status                     ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${GREEN}[2]${NC} VMess Menu        ${GREEN}[6]${NC} Speedtest                          ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${GREEN}[3]${NC} VLESS Menu        ${GREEN}[7]${NC} System Info                        ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}[4]${NC} Trojan Menu       ${GREEN}[8]${NC} Reboot Server                      ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${GREEN}[4]${NC} Trojan Menu       ${GREEN}[8]${NC} Settings & Tools                   ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}                      ${RED}[0]${NC} Exit                               ${CYAN}║${NC}"
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════╝${NC}"
     read -p "Select [0-8]: " opt
@@ -661,9 +704,45 @@ show_menu() {
         5) echo "Services:"; for s in xray nginx sshd dropbear sshws slowdns; do echo "  $s: $(systemctl is-active $s)"; done; read -p "Enter..."; show_menu ;;
         6) speedtest-cli 2>/dev/null || pip3 install speedtest-cli && speedtest-cli; read -p "Enter..."; show_menu ;;
         7) neofetch 2>/dev/null || (echo "OS: $(cat /etc/os-release | grep PRETTY | cut -d'"' -f2)"; free -h); read -p "Enter..."; show_menu ;;
-        8) read -p "Reboot? [y/n]: " c; [[ "$c" =~ ^[Yy]$ ]] && reboot ;;
+        8) tools_menu ;;
         0) exit 0 ;;
         *) show_menu ;;
+    esac
+}
+
+tools_menu() {
+    clear
+    echo -e "${CYAN}═══ SETTINGS & TOOLS ═══${NC}"
+    echo -e "${GREEN}[1]${NC} Auto Pointing (Cloudflare)"
+    echo -e "${GREEN}[2]${NC} Fix UDP / BadVPN"
+    echo -e "${GREEN}[3]${NC} Edit Banner Server"
+    echo -e "${GREEN}[4]${NC} Edit NS Domain"
+    echo -e "${RED}[99]${NC} Uninstall / Rebuild VPS"
+    echo -e "${RED}[0]${NC} Back"
+    read -p "Select: " opt
+    case $opt in
+        1) 
+            read -p "Domain: " d
+            read -p "IP: " i
+            /usr/local/bin/install-cf "$d" "$i"
+            read -p "Enter..."; tools_menu ;;
+        2) 
+            /usr/local/bin/fix-udp
+            read -p "Enter..."; tools_menu ;;
+        3) 
+            nano /etc/issue.net
+            systemctl restart dropbear sshd
+            read -p "Enter..."; tools_menu ;;
+        4)
+            read -p "New NS Domain: " ns
+            sed -i "s/NS_DOMAIN=.*/NS_DOMAIN=$ns/g" /etc/vpn-premium/config
+            systemctl restart slowdns
+            echo "✅ NS Domain updated to $ns"
+            read -p "Enter..."; tools_menu ;;
+        99)
+            /usr/local/bin/uninstall-vpn
+            exit 0 ;;
+        0) show_menu ;;
     esac
 }
 
@@ -836,7 +915,48 @@ echo ""; echo "Connections:"
 netstat -tnpa 2>/dev/null | grep -E "sshd|xray" | grep ESTABLISHED | awk '{print $5}' | cut -d: -f1 | sort -u
 EOF
 
-    chmod +x /usr/local/bin/{add-ssh,del-ssh,add-vmess,del-vmess,add-vless,del-vless,add-trojan,del-trojan,cek-login}
+    # fix-udp
+    cat > /usr/local/bin/fix-udp << 'EOF'
+#!/bin/bash
+systemctl restart badvpn-7100 badvpn-7200 badvpn-7300
+sysctl -w net.ipv4.ip_forward=1 > /dev/null
+echo "✅ UDPGW / BadVPN restarted & IP Forwarding enabled."
+EOF
+
+    # install-cf
+    cat > /usr/local/bin/install-cf << 'EOF'
+#!/bin/bash
+[[ -z "$1" || -z "$2" ]] && { echo "Usage: install-cf <domain> <ip>"; exit 1; }
+source /etc/vpn-premium/install.sh
+install_cloudflare "$1" "$2"
+EOF
+
+    # uninstall-vpn
+    cat > /usr/local/bin/uninstall-vpn << 'EOF'
+#!/bin/bash
+echo "⚠️ WARNING: This will remove ALL VPN configurations, users, and files!"
+read -p "Are you sure? [y/N]: " sure
+[[ ! "$sure" =~ ^[Yy]$ ]] && exit 1
+
+echo "Stopping services..."
+systemctl stop nginx xray sshd dropbear sshws slowdns badvpn-7100 badvpn-7200 badvpn-7300
+systemctl disable nginx xray sshd dropbear sshws slowdns badvpn-7100 badvpn-7200 badvpn-7300
+
+echo "Removing files..."
+rm -rf /etc/vpn-premium /etc/xray /usr/local/etc/xray /var/log/xray /var/log/vpn-premium /var/www/html
+rm -f /usr/local/bin/{menu,add-*,del-*,cek-login,fix-udp,install-cf,uninstall-vpn,xp}
+rm -f /etc/nginx/sites-enabled/vpn /etc/nginx/sites-available/vpn
+rm -rf ~/.acme.sh
+
+echo "Removing dependencies..."
+apt-get remove -y nginx xray > /dev/null 2>&1
+apt-get autoremove -y > /dev/null 2>&1
+
+echo "✅ Uninstall Complete! VPS is now clean (mostly)."
+echo "You may need to reboot: reboot"
+EOF
+
+    chmod +x /usr/local/bin/{add-ssh,del-ssh,add-vmess,del-vmess,add-vless,del-vless,add-trojan,del-trojan,cek-login,fix-udp,install-cf,uninstall-vpn}
     log_success "User scripts terinstall"
 }
 
@@ -1045,3 +1165,4 @@ main() {
 }
 
 main "$@"
+
